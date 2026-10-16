@@ -35,6 +35,9 @@ node_modules/
 # silently changes contract keys. `cargo make build-contracts` regenerates it.
 *.wasm
 
+# Pinned third-party browser engine, with license and corresponding source.
+!ui/assets/stockfish/*.wasm
+
 # The one exception, and it is the same rule read the other way round. The web
 # container's key IS the app's public address, so its bytes must never change by
 # accident — a dependency bump, a different machine, even a different $HOME is

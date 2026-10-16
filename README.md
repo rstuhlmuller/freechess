@@ -29,8 +29,9 @@ If nothing loads, you need a node running: see
 - **Play chess.** Full rules: castling, en passant, promotion, checkmate,
   stalemate, threefold repetition, the fifty-move rule, and clocks with
   Fischer increment.
-- **Play the computer immediately.** Untimed practice with a basic local opponent,
-  move history and undo; works without a node connection.
+- **Play the computer immediately.** Untimed practice against Stockfish 19 Lite
+  (Stockfish.js 19.0.1), running privately in a local browser worker, with move
+  history and undo; works without a node connection.
 - **Board controls.** Click or drag pieces, choose promotions, flip the board,
   and move using the keyboard. Bundled SVG pieces and optional game sounds.
 - **Appearance.** Neo and Classic piece sets, board presets, and custom square
@@ -249,6 +250,13 @@ the page's own origin rather than hardcoded.
 Cburnett's pieces (CC BY-SA 3.0). Recoloring preserves each artwork license.
 The bundled credits page is linked from Appearance; interface icons are drawn
 in this project.
+
+**Computer practice.** The bundled Stockfish.js 19.0.1 lite single-threaded
+worker runs entirely in your browser. Positions stay local; the engine needs no
+cloud service or CDN. Its GPLv3 license, authors, checksums, build instructions,
+and complete corresponding source (including the embedded NNUE network) are in
+[`ui/assets/stockfish/`](ui/assets/stockfish/SOURCE.md) and linked from practice.
+The root project license is unchanged.
 
 **Appearance preferences.** The local Freenet delegate stores board and piece
 preferences privately for each player account. Wait for **Saved for this account**

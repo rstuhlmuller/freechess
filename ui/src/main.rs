@@ -12,6 +12,7 @@
 
 mod app;
 mod board;
+mod engine;
 mod freenet;
 mod identity;
 mod practice;

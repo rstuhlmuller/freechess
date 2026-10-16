@@ -1,52 +1,9 @@
-//! Untimed local practice with a small deterministic computer opponent.
+//! Untimed local practice against the bundled Stockfish engine.
 
 use crate::board::{GameBoard, PieceImage};
-use crate::sound;
-use chess_core::chess::{Color, Game, GameStatus, Move, PieceKind, Square};
+use crate::{engine, sound};
+use chess_core::chess::{Color, Game, GameStatus, Move, PieceKind};
 use dioxus::prelude::*;
-
-fn score(game: &Game) -> i32 {
-    match game.status() {
-        GameStatus::Checkmate {
-            winner: Color::White,
-        } => 1000,
-        GameStatus::Checkmate {
-            winner: Color::Black,
-        } => -1000,
-        status if status.is_over() => 0,
-        _ => (0..64)
-            .filter_map(|sq| game.board().piece_at(Square(sq)))
-            .map(|piece| {
-                piece.kind.material_value() as i32
-                    * if piece.color == Color::White { 1 } else { -1 }
-            })
-            .sum(),
-    }
-}
-
-fn computer_move(game: &Game) -> Option<Move> {
-    if game.status().is_over() || game.side_to_move() != Color::Black {
-        return None;
-    }
-    // shortcut: two-ply material search is a beginner opponent; use an engine for stronger play.
-    game.board().legal_moves().into_iter().min_by_key(|mv| {
-        let mut next = game.clone();
-        next.play(*mv).expect("generated move is legal");
-        if next.status().is_over() {
-            return score(&next);
-        }
-        next.board()
-            .legal_moves()
-            .into_iter()
-            .map(|reply| {
-                let mut response = next.clone();
-                response.play(reply).expect("generated reply is legal");
-                score(&response)
-            })
-            .max()
-            .unwrap_or_else(|| score(&next))
-    })
-}
 
 fn play_move(mut game: Signal<Game>, mv: Move) {
     let clip = game.with_mut(|game| {
@@ -66,28 +23,52 @@ fn undo_turn(game: &Game) -> Game {
 #[component]
 pub fn PracticeView() -> Element {
     let mut game = use_signal(Game::new);
+    let mut revision = use_signal(|| 0u64);
+    let mut failure = use_signal(|| None::<String>);
+    let mut active = use_signal(|| None::<document::Eval>);
+    use_drop(move || engine::cancel(active));
     use_future(move || async move {
         loop {
-            crate::gloo_sleep(180).await;
-            if game.peek().side_to_move() != Color::Black || game.peek().status().is_over() {
+            crate::gloo_sleep(60).await;
+            if game.peek().side_to_move() != Color::Black
+                || game.peek().status().is_over()
+                || failure.peek().is_some()
+            {
                 continue;
             }
             let position = game.peek().clone();
-            if let Some(mv) = computer_move(&position) {
-                play_move(game, mv);
+            let requested = *revision.peek();
+            let result = match engine::start(&position) {
+                Ok(eval) => {
+                    active.set(Some(eval));
+                    let result = engine::finish(eval, &position).await;
+                    active.set(None);
+                    result
+                }
+                Err(error) => Err(error),
+            };
+            if requested != *revision.peek() || game.peek().current_fen() != position.current_fen()
+            {
+                continue;
+            }
+            match result {
+                Ok(mv) => play_move(game, mv),
+                Err(error) => failure.set(Some(error)),
             }
         }
     });
     let position = game.read();
     let status = position.status();
     let thinking = !status.is_over() && position.side_to_move() == Color::Black;
-    let playable = (!status.is_over() && !thinking).then_some(Color::White);
+    let playable =
+        (!status.is_over() && !thinking && failure.read().is_none()).then_some(Color::White);
     let fen = position.current_fen().to_string();
     let last_move = position.moves().last().copied();
     let sans = position.san_list();
     let can_undo = position.ply() > 0;
     let label = match status {
-        GameStatus::InProgress if thinking => "Computer is thinking…",
+        GameStatus::InProgress if failure.read().is_some() => "Stockfish unavailable",
+        GameStatus::InProgress if thinking => "Stockfish is thinking…",
         GameStatus::InProgress if position.board().is_check() => "Your turn — in check",
         GameStatus::InProgress => "Your turn",
         GameStatus::Checkmate {
@@ -95,11 +76,20 @@ pub fn PracticeView() -> Element {
         } => "You won by checkmate",
         GameStatus::Checkmate {
             winner: Color::Black,
-        } => "Computer won by checkmate",
+        } => "Stockfish won by checkmate",
         GameStatus::Stalemate => "Draw by stalemate",
         GameStatus::InsufficientMaterial => "Draw by insufficient material",
         GameStatus::FiftyMoveRule => "Draw by fifty-move rule",
         GameStatus::ThreefoldRepetition => "Draw by repetition",
+    };
+    let engine_status = if failure.read().is_some() {
+        "error"
+    } else if status.is_over() {
+        "over"
+    } else if thinking {
+        "thinking"
+    } else {
+        "ready"
     };
     drop(position);
     rsx! {
@@ -113,9 +103,9 @@ pub fn PracticeView() -> Element {
                 div {
                     div { class: "seat",
                         div { class: "seat-avatar", PieceImage { kind: PieceKind::King, color: Color::Black } }
-                        span { class: "name", "Computer" }
+                        span { class: "name", "Stockfish 19 Lite" }
                         span { class: "spacer" }
-                        span { class: "muted small", "Beginner" }
+                        a { class: "muted small", id: "stockfish-credits", href: "{engine::STOCKFISH}/credits.html", target: "_blank", rel: "noopener noreferrer", "Open source" }
                     }
                     div { class: "board-wrap",
                         GameBoard { fen, orientation: Color::White, playable, last_move,
@@ -134,11 +124,23 @@ pub fn PracticeView() -> Element {
                     }
                 }
                 div { class: "panel",
-                    h2 { role: "status", aria_live: "polite", "{label}" }
+                    h2 { id: "engine-status", "data-status": engine_status, role: "status", aria_live: "polite", "{label}" }
+                    if let Some(error) = failure() {
+                        p { id: "engine-error", role: "alert", class: "small", "{error}" }
+                        button { id: "retry-stockfish", onclick: move |_| failure.set(None), "Retry Stockfish" }
+                    }
                     p { class: "muted small", "Select a piece, then its destination. Dragging and keyboard controls work too." }
                     div { class: "replay-bar",
-                        button { class: "primary", onclick: move |_| game.set(Game::new()), "New game" }
+                        button { class: "primary", onclick: move |_| {
+                            revision += 1;
+                            engine::cancel(active);
+                            failure.set(None);
+                            game.set(Game::new());
+                        }, "New game" }
                         button { disabled: !can_undo, onclick: move |_| {
+                            revision += 1;
+                            engine::cancel(active);
+                            failure.set(None);
                             let restored = undo_turn(&game.peek());
                             game.set(restored);
                         }, "Undo turn" }
@@ -165,33 +167,6 @@ pub fn PracticeView() -> Element {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chess_core::chess::Board;
-
-    #[test]
-    fn computer_takes_free_material_and_finds_mate() {
-        let capture = Game::from_board(Board::from_fen("r6k/8/8/8/Q7/8/8/7K b - - 0 1").unwrap());
-        assert_eq!(computer_move(&capture).unwrap().to_uci(), "a8a4");
-        let mut mate = Game::from_board(Board::from_fen("8/8/8/8/8/6q1/5k2/7K b - - 0 1").unwrap());
-        let mv = computer_move(&mate).unwrap();
-        assert!(mate.is_legal(mv));
-        mate.play(mv).unwrap();
-        assert_eq!(
-            mate.status(),
-            GameStatus::Checkmate {
-                winner: Color::Black
-            }
-        );
-        assert!(computer_move(&mate).is_none());
-    }
-
-    #[test]
-    fn computer_waits_for_white_and_never_moves_after_stalemate() {
-        assert!(computer_move(&Game::new()).is_none());
-        let draw = Game::from_board(Board::from_fen("k7/2Q5/8/8/8/8/8/4K3 b - - 0 1").unwrap());
-        assert_eq!(draw.status(), GameStatus::Stalemate);
-        assert!(computer_move(&draw).is_none());
-    }
-
     #[test]
     fn undo_returns_to_humans_previous_turn_even_while_computer_waits() {
         let mut game = Game::new();
