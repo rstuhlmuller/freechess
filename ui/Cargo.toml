@@ -6,6 +6,7 @@ description = "FreeChess browser UI"
 
 [dependencies]
 chess-core.workspace = true
+chess-delegate-protocol.workspace = true
 serde.workspace = true
 ciborium.workspace = true
 blake3.workspace = true

@@ -193,9 +193,17 @@ pub fn connect(
     on_error: impl FnMut(freenet_stdlib::client_api::Error) + Clone + 'static,
     on_open: impl FnOnce() + 'static,
 ) -> Result<WebApi, String> {
-    let socket = web_sys::WebSocket::new(&node_ws_url())
-        .map_err(|e| format!("could not open a websocket to the node: {e:?}"))?;
-    Ok(WebApi::start(socket, on_response, on_error, on_open))
+    #[cfg(target_arch = "wasm32")]
+    {
+        let socket = web_sys::WebSocket::new(&node_ws_url())
+            .map_err(|e| format!("could not open a websocket to the node: {e:?}"))?;
+        Ok(WebApi::start(socket, on_response, on_error, on_open))
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (on_response, on_error, on_open);
+        Err("The UI WebSocket requires a browser".to_string())
+    }
 }
 
 // ------------------------------------------------------------------ delegate
@@ -235,12 +243,12 @@ pub fn delegate_request(payload: Vec<u8>) -> ClientRequest<'static> {
 /// The key a retired delegate had, rebuilt from its recorded code hash.
 ///
 /// We keep only the code hash, because the key follows from it — see
-/// [`chess_core::delegate_api::delegate_key_for`]. The old WASM itself is not
+/// [`chess_delegate_protocol::delegate_key_for`]. The old WASM itself is not
 /// needed: the node either still holds that delegate from an earlier session,
 /// in which case it answers, or it does not and there was nothing to recover.
 pub fn legacy_delegate_key(code_hash: &[u8; 32]) -> DelegateKey {
     DelegateKey::new(
-        chess_core::delegate_api::delegate_key_for(code_hash),
+        chess_delegate_protocol::delegate_key_for(code_hash),
         CodeHash::new(*code_hash),
     )
 }

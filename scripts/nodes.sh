@@ -52,7 +52,7 @@ start_gateway() {
     --public-network-port "$GW_NET" \
     --network-port "$GW_NET" \
     --ws-api-port "$GW_WS" \
-    --ws-api-address 0.0.0.0 \
+    --ws-api-address 127.0.0.1 \
     --config-dir "$gw_dir/config" \
     --data-dir "$gw_dir/data" \
     --log-dir "$gw_dir/logs" \
@@ -108,7 +108,7 @@ start_peer() {
     --disable-auto-update \
     --network-port "$net" \
     --ws-api-port "$ws" \
-    --ws-api-address 0.0.0.0 \
+    --ws-api-address 127.0.0.1 \
     --gateway "127.0.0.1:$GW_NET,$pubkey" \
     --config-dir "$dir/config" \
     --data-dir "$dir/data" \

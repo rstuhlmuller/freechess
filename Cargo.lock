@@ -353,7 +353,17 @@ dependencies = [
 name = "chess-delegate"
 version = "0.1.0"
 dependencies = [
- "chess-core",
+ "chess-delegate-protocol",
+ "ciborium",
+ "freenet-stdlib",
+ "serde",
+]
+
+[[package]]
+name = "chess-delegate-protocol"
+version = "0.1.0"
+dependencies = [
+ "blake3",
  "ciborium",
  "freenet-stdlib",
  "serde",
@@ -366,6 +376,7 @@ dependencies = [
  "blake3",
  "bs58",
  "chess-core",
+ "chess-delegate-protocol",
  "chrono",
  "ciborium",
  "dioxus",
