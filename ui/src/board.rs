@@ -116,6 +116,144 @@ pub fn PieceImage(kind: PieceKind, color: Color) -> Element {
     }
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
+fn piece_bitmap_svg(
+    theme: &crate::theme::Theme,
+    color: Color,
+    kind: PieceKind,
+    size: u32,
+) -> String {
+    use crate::theme::PieceSet;
+    if !theme.valid() {
+        return piece_bitmap_svg(&crate::theme::Theme::default(), color, kind, size);
+    }
+    let (fill, outline, detail, shade, weight) = match color {
+        Color::White => (&theme.white_piece, "#454545", "#454545", 51, 90),
+        Color::Black => (&theme.black_piece, "#292929", "#ececec", 0, 80),
+    };
+    let channels = [1, 3, 5]
+        .map(|start| u32::from_str_radix(&fill[start..start + 2], 16).unwrap())
+        .map(|channel| (channel * weight + shade * (100 - weight) + 50) / 100);
+    let shade = format!("#{:02x}{:02x}{:02x}", channels[0], channels[1], channels[2]);
+    let artwork = piece_artwork(theme.piece_set, color, kind)
+        .replace("var(--piece-fill)", fill)
+        .replace("var(--piece-shade)", &shade)
+        .replace("var(--piece-outline)", outline)
+        .replace("var(--piece-detail)", detail);
+    let view_box = if theme.piece_set == PieceSet::Neo {
+        50
+    } else {
+        45
+    };
+    let root_fill = if theme.piece_set == PieceSet::Neo {
+        outline
+    } else {
+        fill
+    };
+    format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 {view_box} {view_box}" fill="{root_fill}" fill-rule="evenodd" clip-rule="evenodd">{artwork}</svg>"#
+    )
+}
+
+#[derive(Clone, Default, PartialEq)]
+struct DragPreviewImages {
+    #[cfg(target_arch = "wasm32")]
+    images: Vec<(Color, PieceKind, web_sys::HtmlImageElement)>,
+}
+
+impl DragPreviewImages {
+    fn new(theme: &crate::theme::Theme, size: u32) -> Self {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let mut images = Vec::new();
+            for color in [Color::White, Color::Black] {
+                for kind in [
+                    PieceKind::Pawn,
+                    PieceKind::Knight,
+                    PieceKind::Bishop,
+                    PieceKind::Rook,
+                    PieceKind::Queen,
+                    PieceKind::King,
+                ] {
+                    if let Ok(image) = web_sys::HtmlImageElement::new() {
+                        let encoded = js_sys::encode_uri_component(&piece_bitmap_svg(
+                            theme, color, kind, size,
+                        ))
+                        .as_string()
+                        .unwrap();
+                        image.set_decoding("sync");
+                        image.set_src(&format!("data:image/svg+xml,{encoded}"));
+                        images.push((color, kind, image));
+                    }
+                }
+            }
+            Self { images }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = (theme, size);
+            Self::default()
+        }
+    }
+
+    fn set(&self, event: &DragEvent, color: Color, kind: PieceKind, square: Square) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let Some((_, _, image)) = self
+                .images
+                .iter()
+                .find(|(c, k, _)| *c == color && *k == kind)
+            else {
+                return false;
+            };
+            if !image.complete() || image.natural_width() == 0 || image.is_connected() {
+                return false;
+            }
+            let data = event.data();
+            let Some(native) = data.downcast::<web_sys::DragEvent>() else {
+                return false;
+            };
+            let Some(transfer) = native.data_transfer() else {
+                return false;
+            };
+            let Some(element) = web_sys::window()
+                .and_then(|window| window.document())
+                .and_then(|document| document.get_element_by_id(&format!("board-square-{square}")))
+            else {
+                return false;
+            };
+            let rect = element.get_bounding_client_rect();
+            // WebKit uses the image bitmap only while the decoded image is detached.
+            transfer.set_drag_image(
+                image,
+                native.client_x() - rect.left() as i32,
+                native.client_y() - rect.top() as i32,
+            );
+            true
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = (event, color, kind, square);
+            false
+        }
+    }
+}
+
+fn refresh_drag_preview_size(mut size: Signal<u32>) {
+    #[cfg(target_arch = "wasm32")]
+    if let Some(square) = web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.get_element_by_id("board-square-a8"))
+    {
+        let pixels = square.get_bounding_client_rect().width().round().max(1.0) as u32;
+        if *size.peek() != pixels {
+            size.set(pixels);
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = &mut size;
+}
+
 fn square_order(orientation: Color) -> Vec<Square> {
     let mut squares: Vec<Square> = (0..8)
         .rev()
@@ -295,6 +433,9 @@ pub fn GameBoard(
     last_move: Option<Move>,
     #[props(default = None)] on_move: Option<EventHandler<Move>>,
 ) -> Element {
+    let theme = use_context::<Signal<crate::theme::Theme>>();
+    let preview_size = use_signal(|| 80u32);
+    let preview_images = use_memo(move || DragPreviewImages::new(&theme.read(), preview_size()));
     let parsed = Board::from_fen(&fen);
     let color = playable.filter(|color| {
         parsed
@@ -345,6 +486,9 @@ pub fn GameBoard(
         div { class: "board-container",
             div {
                 class: "board",
+                onmounted: move |_| refresh_drag_preview_size(preview_size),
+                onpointerenter: move |_| refresh_drag_preview_size(preview_size),
+                onpointerdown: move |_| refresh_drag_preview_size(preview_size),
                 role: "group",
                 aria_label: "Chessboard. Use arrow keys to navigate and Enter or Space to select and move. Escape cancels selection.",
                 for (index, sq) in square_order(orientation).into_iter().enumerate() {
@@ -393,7 +537,7 @@ pub fn GameBoard(
                                     }
                                 },
                                 ondragstart: move |event| {
-                                    if movable && !promotion_open {
+                                    if movable && !promotion_open && piece.is_some_and(|piece| preview_images.read().set(&event, piece.color, piece.kind, sq)) {
                                         let _ = event.data_transfer().set_data("text/plain", &sq.to_string());
                                         interact.call(BoardAction::DragStart(sq));
                                     } else {
@@ -551,6 +695,41 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn drag_bitmaps_are_standalone_and_match_the_piece_palette() {
+        use crate::theme::{PieceSet, Theme};
+        for set in [PieceSet::Neo, PieceSet::Classic] {
+            let theme = Theme {
+                piece_set: set,
+                white_piece: "#123456".into(),
+                black_piece: "#abcdef".into(),
+                ..Theme::default()
+            };
+            for (color, fill, shade) in [
+                (Color::White, "#123456", "#153453"),
+                (Color::Black, "#abcdef", "#89a4bf"),
+            ] {
+                let svg = piece_bitmap_svg(&theme, color, PieceKind::Knight, 64);
+                assert!(svg.contains("width=\"64\" height=\"64\""));
+                assert!(svg.contains(&format!("fill=\"{fill}\"")));
+                if set == PieceSet::Neo {
+                    assert!(svg.contains(&format!("fill=\"{shade}\"")));
+                }
+                assert!(!svg.contains("var("));
+                assert!(!svg.contains("<rect"));
+                assert!(!svg.contains("href="));
+            }
+        }
+        let invalid = Theme {
+            white_piece: "red;bad".into(),
+            ..Theme::default()
+        };
+        assert_eq!(
+            piece_bitmap_svg(&invalid, Color::White, PieceKind::Pawn, 80),
+            piece_bitmap_svg(&Theme::default(), Color::White, PieceKind::Pawn, 80)
+        );
     }
 
     #[test]
