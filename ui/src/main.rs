@@ -45,6 +45,11 @@ fn App() -> Element {
         loop {
             let ready = state.read().account_settled;
             if ready {
+                if let Some(command) =
+                    state.with_mut(|s| app::check_theme_recovery(s, identity::now_ms()))
+                {
+                    sync.send(command);
+                }
                 if state.read().theme_player.is_some() {
                     return;
                 }
@@ -63,17 +68,10 @@ fn App() -> Element {
         }
         let previous = observed_theme.peek().clone();
         if previous.as_ref().map(|(id, _)| *id) != Some(player) {
-            let initial = s.stored_theme.clone().unwrap_or(current);
-            let first_save = s.stored_theme.is_none();
+            let initial = s.stored_theme.clone().unwrap_or_default();
             drop(s);
             observed_theme.set(Some((player, initial.clone())));
             theme.set(initial.clone());
-            if first_save {
-                sync.send(app::Cmd::SaveTheme {
-                    player,
-                    theme: initial,
-                });
-            }
         } else if previous
             .as_ref()
             .is_some_and(|(_, saved)| saved != &current)

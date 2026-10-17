@@ -194,8 +194,8 @@ cargo make test         # the full test suite
 cargo make publish      # publish to the local node
 ```
 
-For local development, use Dioxus CLI **0.7.9** to match `Cargo.lock`, and install
-Python `cryptography` for the isolated node harness:
+For local development, use Dioxus CLI **0.7.9** to match `Cargo.lock`, Python
+**3.11+** for the build regression checks, and `cryptography` for the isolated node harness:
 
 ```bash
 python3 -m pip install cryptography

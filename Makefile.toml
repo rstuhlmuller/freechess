@@ -130,6 +130,7 @@ sed -i "s|^#*base_path = .*|base_path = \"v1/contract/web/$KEY\"|" ui/Dioxus.tom
 ( cd ui && dx build --release --platform web )
 status=$?
 mv ui/Dioxus.toml.bak ui/Dioxus.toml
+./scripts/copy-stockfish-assets.sh target/dx/chess-ui/release/web/public
 exit $status
 '''
 
@@ -141,9 +142,14 @@ dependencies = ["build-contracts", "build-delegate", "build-ui"]
 
 [tasks.test]
 description = "Run the test suite"
-dependencies = ["build-contracts", "build-delegate"]
+dependencies = ["build-contracts", "build-delegate", "test-build-workflows"]
 command = "cargo"
 args = ["test", "--workspace"]
+
+[tasks.test-build-workflows]
+description = "Check publishing retries and pinned browser-engine assets without nodes"
+command = "python3"
+args = ["scripts/tests/build-workflows.py"]
 
 [tasks.test-deep]
 description = "Run the slow perft checks"
@@ -155,8 +161,9 @@ command = "cargo"
 args = ["fmt", "--all"]
 
 [tasks.clippy]
+dependencies = ["build-contracts", "build-delegate"]
 command = "cargo"
-args = ["clippy", "--workspace", "--exclude", "chess-ui", "--", "-D", "warnings"]
+args = ["clippy", "--workspace", "--", "-D", "warnings"]
 
 [tasks.preflight]
 description = "Everything CI would run, before publishing"

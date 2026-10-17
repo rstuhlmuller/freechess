@@ -60,8 +60,7 @@ pub fn unlock() {
                 .into_iter()
                 .find_map(|name| get(&global, name).ok()?.dyn_into::<Function>().ok());
             audio.context = constructor
-                .and_then(|constructor| Reflect::construct(&constructor, &Array::new()).ok())
-                .map(Into::into);
+                .and_then(|constructor| Reflect::construct(&constructor, &Array::new()).ok());
         }
         if let Some(context) = &audio.context {
             resume(context);
@@ -162,7 +161,7 @@ fn tone(context: &JsValue, frequency: f64, delay: f64, duration: f64) -> Result<
         "exponentialRampToValueAtTime",
         &[0.0001.into(), (start + duration).into()],
     )?;
-    call(&oscillator, "connect", &[gain.clone()])?;
+    call(&oscillator, "connect", std::slice::from_ref(&gain))?;
     call(&gain, "connect", &[get(context, "destination")?])?;
     let finished_oscillator = oscillator.clone();
     let finished = wasm_bindgen::closure::Closure::once_into_js(move || {

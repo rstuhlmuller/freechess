@@ -4,6 +4,7 @@ use chess_core::chess::{Game, Move};
 use dioxus::prelude::*;
 use serde::Deserialize;
 
+// Build scripts restore this folder verbatim after dx processes its assets.
 pub const STOCKFISH: Asset = asset!("/assets/stockfish", AssetOptions::folder());
 
 pub fn start(game: &Game, skill_level: u8) -> Result<document::Eval, String> {

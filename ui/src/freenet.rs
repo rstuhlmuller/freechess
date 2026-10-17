@@ -18,6 +18,57 @@ use freenet_stdlib::prelude::{
 };
 use std::sync::Arc;
 
+pub fn error_message(error: impl std::fmt::Display) -> String {
+    let message = error.to_string();
+    if [
+        "ApplicationMessage",
+        "payload:",
+        "DelegateContext(",
+        "\"request\":",
+    ]
+    .iter()
+    .any(|private| message.contains(private))
+    {
+        "Node request failed; private request details omitted".into()
+    } else {
+        message
+    }
+}
+
+pub fn api_error(error: freenet_stdlib::client_api::Error) -> String {
+    #[cfg(target_arch = "wasm32")]
+    let error = match error {
+        freenet_stdlib::client_api::Error::ConnectionError(mut details) => {
+            if let Some(object) = details.as_object_mut() {
+                object.remove("request");
+            }
+            freenet_stdlib::client_api::Error::ConnectionError(details)
+        }
+        other => other,
+    };
+    error_message(error)
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    #[test]
+    fn private_request_diagnostic_regression() {
+        let message = super::error_message(
+            "request error: {\"error\":\"closed\",\"request\":\"ApplicationMessage { payload: [201, 201], context: private-fixture }\"}",
+        );
+        assert!(!message.contains("201"));
+        assert!(!message.contains("private-fixture"));
+        assert_eq!(
+            super::error_message("missing delegate ABC"),
+            "missing delegate ABC"
+        );
+        let error = freenet_stdlib::client_api::Error::OtherError(
+            std::io::Error::other("ApplicationMessage { payload: private-fixture }").into(),
+        );
+        assert!(!super::api_error(error).contains("private-fixture"));
+    }
+}
+
 /// The game contract's WASM, embedded at build time.
 ///
 /// Every game is a new contract instance, and publishing it needs the module.
@@ -132,6 +183,7 @@ pub fn get_request(id: ContractInstanceId, subscribe: bool) -> ClientRequest<'st
 /// served *by* the node — on whatever port that node listens on. Hardcoding
 /// 7509 breaks the moment someone runs a second node, which is exactly what the
 /// two-node test does.
+#[cfg(target_arch = "wasm32")]
 pub fn node_ws_url() -> String {
     let window = web_sys::window().expect("a browser window");
     let location = window.location();
@@ -201,6 +253,10 @@ pub fn delegate_request(payload: Vec<u8>) -> ClientRequest<'static> {
     delegate_request_to(delegate_key(), payload)
 }
 
+pub fn delegate_request_with_context(payload: Vec<u8>, context: Vec<u8>) -> ClientRequest<'static> {
+    delegate_request_to_with_context(delegate_key(), payload, context)
+}
+
 /// The key a retired delegate had, rebuilt from its recorded code hash.
 ///
 /// We keep only the code hash, because the key follows from it — see
@@ -220,11 +276,20 @@ pub fn legacy_delegate_key(code_hash: &[u8; 32]) -> DelegateKey {
 /// delegate WASM changes, the seed is filed under the *old* key, and the only
 /// way to reach it is to ask that key directly.
 pub fn delegate_request_to(key: DelegateKey, payload: Vec<u8>) -> ClientRequest<'static> {
+    delegate_request_to_with_context(key, payload, Vec::new())
+}
+
+fn delegate_request_to_with_context(
+    key: DelegateKey,
+    payload: Vec<u8>,
+    context: Vec<u8>,
+) -> ClientRequest<'static> {
     DelegateRequest::ApplicationMessages {
         key,
         params: Parameters::from(vec![]),
         inbound: vec![InboundDelegateMsg::ApplicationMessage(
-            ApplicationMessage::new(payload),
+            ApplicationMessage::new(payload)
+                .with_context(freenet_stdlib::prelude::DelegateContext::new(context)),
         )],
     }
     .into()

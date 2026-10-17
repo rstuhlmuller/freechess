@@ -28,6 +28,7 @@ FREECHESS_BUILD="$(git rev-parse --short HEAD)+local" \
 
 DIST=target/dx/chess-ui/release/web/public
 test -f "$DIST/index.html"
+./scripts/copy-stockfish-assets.sh "$DIST"
 tar -C "$DIST" -cJf "$PWD/$OUT/webapp.tar.xz" .
 VERSION=$(( $(cat "$OUT/version" 2>/dev/null || echo 0) + 1 ))
 cargo run --locked --quiet -p webapp-packager -- --key "$OUT/publisher.key" \
@@ -39,6 +40,9 @@ if ! curl -sf http://127.0.0.1:7511/ >/dev/null \
   || ! curl -sf http://127.0.0.1:7514/ >/dev/null; then
   ./scripts/nodes.sh up
 fi
+# Earlier nodes may accept this version before a later publication fails.
+# Reserve it now so an edited retry cannot reuse an already published version.
+printf '%s\n' "$VERSION" > "$OUT/version"
 for port in 7511 7512 7514; do
   fdev --port "$port" publish --timeout 60 \
     --code target/wasm32-unknown-unknown/release/lobby_contract.wasm \
@@ -47,6 +51,5 @@ for port in 7511 7512 7514; do
     --code published-contract/web_container_contract.wasm \
     --parameters "$OUT/webapp.params" contract --state "$OUT/webapp.state"
 done
-printf '%s\n' "$VERSION" > "$OUT/version"
 printf '\nFreeChess: http://127.0.0.1:7511/v1/contract/web/%s/\n' "$KEY"
 printf 'Second player: http://127.0.0.1:7512/v1/contract/web/%s/\n' "$KEY"

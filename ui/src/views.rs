@@ -428,7 +428,9 @@ pub fn AppearanceModal(state: Signal<AppState>, sync: Sync, on_close: EventHandl
     let s = state.read();
     let player = s.account.key.verifying_key().to_bytes();
     let loaded = s.account_settled && s.theme_player == Some(player);
-    let saved = s.pending_theme.is_none() && s.stored_theme.as_ref() == Some(&current);
+    let saved = loaded
+        && s.pending_theme.is_none()
+        && s.stored_theme.as_ref().unwrap_or(&Theme::default()) == &current;
     let failed = s.theme_error.is_some() && !saved;
     let save_status = if failed {
         if loaded {
@@ -962,6 +964,11 @@ pub fn HomeView(state: Signal<AppState>, sync: Sync) -> Element {
     }
 }
 
+fn replay_position(ply: usize, total_plies: usize) -> Option<usize> {
+    // Returning to the current position resumes live updates.
+    (ply < total_plies).then_some(ply)
+}
+
 /// A single game — playing or spectating, plus the replay scrubber once it is
 /// over.
 #[component]
@@ -1226,14 +1233,14 @@ pub fn GameView(state: Signal<AppState>, sync: Sync, game_id: GameId) -> Element
                                         span { class: "num", "{i + 1}." }
                                         button {
                                             class: if shown_ply == i * 2 + 1 { "mv current" } else { "mv" },
-                                            onclick: move |_| viewing_ply.set(Some(i * 2 + 1)),
+                                            onclick: move |_| viewing_ply.set(replay_position(i * 2 + 1, total_plies)),
                                             "aria-label": "Move {i + 1}, White: {pair[0]}",
                                             "{pair[0]}"
                                         }
                                         if pair.len() > 1 {
                                             button {
                                                 class: if shown_ply == i * 2 + 2 { "mv current" } else { "mv" },
-                                                onclick: move |_| viewing_ply.set(Some(i * 2 + 2)),
+                                                onclick: move |_| viewing_ply.set(replay_position(i * 2 + 2, total_plies)),
                                                 "aria-label": "Move {i + 1}, Black: {pair[1]}",
                                                 "{pair[1]}"
                                             }
@@ -1244,17 +1251,17 @@ pub fn GameView(state: Signal<AppState>, sync: Sync, game_id: GameId) -> Element
                         }
                         div { class: "body",
                             div { class: "replay-bar",
-                                button { class: "ghost", title: "Starting position", "aria-label": "Starting position", disabled: shown_ply == 0, onclick: move |_| viewing_ply.set(Some(0)), {icon("first")} }
+                                button { class: "ghost", title: "Starting position", "aria-label": "Starting position", disabled: shown_ply == 0, onclick: move |_| viewing_ply.set(replay_position(0, total_plies)), {icon("first")} }
                                 button {
                                     class: "ghost",
                                     title: "Previous move", "aria-label": "Previous move", disabled: shown_ply == 0,
-                                    onclick: move |_| viewing_ply.set(Some(shown_ply.saturating_sub(1))),
+                                    onclick: move |_| viewing_ply.set(replay_position(shown_ply.saturating_sub(1), total_plies)),
                                     {icon("previous")}
                                 }
                                 button {
                                     class: "ghost",
                                     title: "Next move", "aria-label": "Next move", disabled: shown_ply == total_plies,
-                                    onclick: move |_| viewing_ply.set(Some((shown_ply + 1).min(total_plies))),
+                                    onclick: move |_| viewing_ply.set(replay_position(shown_ply + 1, total_plies)),
                                     {icon("next")}
                                 }
                                 button { class: "ghost", title: "Latest position", "aria-label": "Latest position", disabled: !scrubbing, onclick: move |_| viewing_ply.set(None), {icon("last")} }
@@ -2059,5 +2066,37 @@ pub fn ChooseNicknamePrompt(state: Signal<AppState>, sync: Sync) -> Element {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::replay_position;
+    use chess_core::chess::{Game, Move};
+
+    #[test]
+    fn returning_to_current_position_follows_the_next_move() {
+        let mut game = Game::new();
+        game.play(Move::from_uci("e2e4").unwrap()).unwrap();
+        let start = replay_position(0, game.ply());
+        assert_eq!(start, Some(0));
+        let next = replay_position(start.unwrap() + 1, game.ply());
+
+        game.play(Move::from_uci("e7e5").unwrap()).unwrap();
+        assert_eq!(
+            game.fen_at(next.unwrap_or(game.ply())),
+            game.current_fen(),
+            "Next back to the current position must resume following live moves"
+        );
+        assert_eq!(next, None);
+    }
+
+    #[test]
+    fn only_past_positions_pin_the_replay() {
+        assert_eq!(replay_position(0, 0), None);
+        assert_eq!(replay_position(0, 4), Some(0));
+        assert_eq!(replay_position(3, 4), Some(3));
+        assert_eq!(replay_position(4, 4), None);
+        assert_eq!(replay_position(5, 4), None);
     }
 }
