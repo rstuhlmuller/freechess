@@ -94,6 +94,11 @@ export async function openApp(
 
   await page.goto(appUrl(port), { waitUntil: "domcontentloaded" });
   const frame = app(page);
+  if (nickname) {
+    await page.addLocatorHandler(frame.locator("#nickname-prompt"), async () => {
+      await frame.locator("#nickname-later").click();
+    });
+  }
   await expect(frame.locator(".topbar")).toBeVisible();
   // Wait for the node connection before doing anything that needs the network.
   await expect(frame.locator(".conn .dot.online")).toBeVisible();
