@@ -141,8 +141,9 @@ dependencies = ["build-contracts", "build-delegate", "build-ui"]
 
 [tasks.test]
 description = "Run the test suite"
+dependencies = ["build-contracts", "build-delegate"]
 command = "cargo"
-args = ["test", "--workspace", "--exclude", "chess-ui"]
+args = ["test", "--workspace"]
 
 [tasks.test-deep]
 description = "Run the slow perft checks"
@@ -509,7 +510,7 @@ command = "bash"
 args = ["scripts/local.sh"]
 
 [tasks.nodes-up]
-description = "Start the isolated two-node test network"
+description = "Start the isolated three-node test network"
 script_runner = "@shell"
 script = "./scripts/nodes.sh up"
 

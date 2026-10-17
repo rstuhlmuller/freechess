@@ -40,8 +40,6 @@ pub enum Route {
     Home,
     Practice,
     Game(GameId),
-    Replay(GameId),
-    Profile(PlayerId),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -431,7 +429,6 @@ pub fn use_sync(mut state: Signal<AppState>) -> Sync {
 enum Subject {
     Lobby,
     Game(GameId),
-    Profile(PlayerId),
 }
 
 /// Publish the lobby if needed, then follow it.
@@ -1617,7 +1614,6 @@ fn handle_response(
             }
         }
 
-        Some(Subject::Profile(_)) => {}
         None => {
             sync_log(&format!(
                 "DROP response for {id}: instance not in the routing map"

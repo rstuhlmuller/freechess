@@ -35,7 +35,7 @@ fn main() {
 
 #[component]
 fn App() -> Element {
-    let mut theme = use_context_provider(|| Signal::new(theme::load()));
+    let mut theme = use_context_provider(|| Signal::new(theme::Theme::default()));
     let account = use_signal(identity::load_or_create);
     let mut state = use_signal(|| AppState::new(account()));
     let sync = app::use_sync(state);
@@ -132,7 +132,7 @@ fn App() -> Element {
     let mut requested = use_signal(|| None::<GameId>);
     use_effect(move || {
         let s = state.read();
-        let (Route::Game(id) | Route::Replay(id)) = s.route.clone() else {
+        let Route::Game(id) = s.route else {
             return;
         };
         let missing = !s.games.contains_key(&id);
@@ -201,7 +201,7 @@ fn App() -> Element {
     use_future(move || async move {
         loop {
             let watching = match state.read().route.clone() {
-                Route::Game(id) | Route::Replay(id) => Some(id),
+                Route::Game(id) => Some(id),
                 _ => None,
             };
             sync.send(app::Cmd::Heartbeat { watching });
@@ -396,12 +396,8 @@ fn App() -> Element {
             Route::Home => rsx! { views::HomeView { state, sync } },
             Route::Practice => rsx! { practice::PracticeView {} },
             Route::Game(id) => rsx! {
-                views::GameView { key: "{id}", state, sync, game_id: id, replay_mode: false }
+                views::GameView { key: "{id}", state, sync, game_id: id }
             },
-            Route::Replay(id) => rsx! {
-                views::GameView { key: "replay-{id}", state, sync, game_id: id, replay_mode: true }
-            },
-            Route::Profile(_) => rsx! { views::HomeView { state, sync } },
         }
         views::Footer {}
         }

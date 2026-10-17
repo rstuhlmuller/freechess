@@ -216,7 +216,7 @@ handles the ordering.
 ```bash
 cargo test                          # unit and state tests
 cargo test --release -- --ignored   # deep perft
-cargo make test-e2e                 # two-node browser test
+cargo make test-e2e                 # three-node browser test
 ```
 
 Optional account-theme isolation check: publish the app to a disposable node
@@ -303,15 +303,6 @@ Freenet's reference decentralized chat application, and the
 MIT — see [LICENSE](LICENSE).
 
 ## Publishing notes
-
-Two things about publishing are worth knowing before you try it.
-
-**Republishing needs UPDATE, not PUT.** `fdev publish` is a PUT, and a PUT
-against a contract that already holds state does not replace it. To ship a new
-release of the webapp, PUT once to create it and use
-`fdev execute update <key> <state> --as-state` afterwards. The web-container
-contract only accepts full-state replacements (a webapp has no meaningful
-incremental form), which is what `--as-state` selects.
 
 **Large states do not publish reliably on freenet 0.2.114.** Observed on a clean
 two-node network: publishing the 56-byte lobby succeeds and the contract is

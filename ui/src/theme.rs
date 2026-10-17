@@ -1,8 +1,6 @@
-//! Private per-account appearance settings, with one-time import of old links.
+//! Private per-account appearance settings stored by the local delegate.
 
 pub use chess_delegate_protocol::{PieceSet, Theme};
-
-const STORAGE_KEY: &str = "freechess:theme:v1";
 
 pub fn style(theme: &Theme) -> String {
     if !theme.valid() {
@@ -12,37 +10,6 @@ pub fn style(theme: &Theme) -> String {
         "--light-sq:{};--dark-sq:{};--white-piece:{};--black-piece:{};",
         theme.light_square, theme.dark_square, theme.white_piece, theme.black_piece
     )
-}
-
-fn decode(encoded: &str) -> Option<Theme> {
-    if encoded.len() > 512 {
-        return None;
-    }
-    let bytes = bs58::decode(encoded).into_vec().ok()?;
-    let theme: Theme = ciborium::de::from_reader(bytes.as_slice()).ok()?;
-    theme.valid().then_some(theme)
-}
-
-fn storage() -> Option<web_sys::Storage> {
-    web_sys::window()?.local_storage().ok().flatten()
-}
-
-fn from_link() -> Option<Theme> {
-    web_sys::window()
-        .and_then(|window| window.location().hash().ok())
-        .and_then(|hash| web_sys::UrlSearchParams::new_with_str(hash.trim_start_matches('#')).ok())
-        .and_then(|params| params.get("theme"))
-        .and_then(|value| decode(&value))
-}
-
-pub fn load() -> Theme {
-    from_link()
-        .or_else(|| {
-            storage()
-                .and_then(|storage| storage.get_item(STORAGE_KEY).ok().flatten())
-                .and_then(|value| decode(&value))
-        })
-        .unwrap_or_default()
 }
 
 pub fn receive(state: &mut crate::app::AppState, player: [u8; 32], theme: Option<Theme>) {
@@ -112,17 +79,11 @@ mod tests {
     }
 
     #[test]
-    fn legacy_preferences_and_css_reject_untrusted_colors() {
-        let mut theme = Theme::default();
-        let mut bytes = Vec::new();
-        ciborium::ser::into_writer(&theme, &mut bytes).unwrap();
-        assert_eq!(
-            decode(&bs58::encode(bytes).into_string()),
-            Some(theme.clone())
-        );
-        theme.white_piece = "#123456;background:red".into();
+    fn css_rejects_untrusted_colors() {
+        let theme = Theme {
+            white_piece: "#123456;background:red".into(),
+            ..Theme::default()
+        };
         assert_eq!(style(&theme), style(&Theme::default()));
-        assert!(decode("invalid preference").is_none());
-        assert!(decode(&"1".repeat(513)).is_none());
     }
 }

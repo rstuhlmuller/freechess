@@ -965,12 +965,7 @@ pub fn HomeView(state: Signal<AppState>, sync: Sync) -> Element {
 /// A single game — playing or spectating, plus the replay scrubber once it is
 /// over.
 #[component]
-pub fn GameView(
-    state: Signal<AppState>,
-    sync: Sync,
-    game_id: GameId,
-    replay_mode: bool,
-) -> Element {
+pub fn GameView(state: Signal<AppState>, sync: Sync, game_id: GameId) -> Element {
     let mut viewing_ply = use_signal(|| None::<usize>);
     let mut challenge_target = use_signal(|| None::<(String, ed25519_dalek::VerifyingKey)>);
     let mut flipped = use_signal(|| false);
@@ -1033,14 +1028,13 @@ pub fn GameView(
     let result = game.result();
     let is_over = result.is_over();
 
-    // In replay mode (or when scrubbing) the board shows a past position and is
-    // not playable.
+    // A past position is not playable.
     let total_plies = replay.ply();
     let shown_ply = viewing_ply().unwrap_or(total_plies).min(total_plies);
     let scrubbing = shown_ply != total_plies;
     let fen = replay.fen_at(shown_ply).to_string();
 
-    let playable = if replay_mode || scrubbing || is_over || !ready {
+    let playable = if scrubbing || is_over || !ready {
         None
     } else {
         my_color.filter(|c| game.replay().side_to_move() == *c && game.opponent.get().is_some())
@@ -1203,7 +1197,7 @@ pub fn GameView(
                                 sync.send(Cmd::PlayMove { game: game_id, mv });
                             },
                         }
-                        if is_over && !scrubbing && !replay_mode && !result_dismissed() {
+                        if is_over && !scrubbing && !result_dismissed() {
                             div { class: "result-overlay",
                                 div { class: "result-card",
                                     div { class: "headline", "{result_headline(result, my_color)}" }
@@ -1298,7 +1292,7 @@ pub fn GameView(
                                 if is_over { "{result_headline(result, my_color)}" }
                                 else if game.opponent.get().is_none() { "Waiting for an opponent" }
                                 else if !ready { "Reconnecting..." }
-                                else if scrubbing || replay_mode { "Reviewing the game" }
+                                else if scrubbing { "Reviewing the game" }
                                 else if playable.is_some() { "Your turn" }
                                 else if my_color.is_some() { "Opponent's turn" }
                                 else if to_move == Color::White { "White to move" }
