@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 pub const STOCKFISH: Asset = asset!("/assets/stockfish", AssetOptions::folder());
 
-pub fn start(game: &Game) -> Result<document::Eval, String> {
+pub fn start(game: &Game, skill_level: u8) -> Result<document::Eval, String> {
     let moves = game
         .moves()
         .iter()
@@ -19,6 +19,7 @@ pub fn start(game: &Game) -> Result<document::Eval, String> {
         format!("{STOCKFISH}/stockfish-19-lite-single.js"),
         format!("{STOCKFISH}/stockfish-19-lite-single.wasm"),
         position,
+        skill_level,
     ))
     .map_err(|_| "Could not start Stockfish".to_string())?;
     Ok(eval)

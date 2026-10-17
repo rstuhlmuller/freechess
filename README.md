@@ -31,7 +31,7 @@ If nothing loads, you need a node running: see
   Fischer increment.
 - **Play the computer immediately.** Untimed practice against Stockfish 19 Lite
   (Stockfish.js 19.0.1), running privately in a local browser worker, with move
-  history and undo; works without a node connection.
+  history, undo and adjustable difficulty; works without a node connection.
 - **Board controls.** Click or drag pieces, choose promotions, flip the board,
   and move using the keyboard. Bundled SVG pieces and optional game sounds.
 - **Appearance.** Neo and Classic piece sets, board presets, and custom square

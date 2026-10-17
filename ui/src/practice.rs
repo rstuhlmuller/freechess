@@ -23,6 +23,7 @@ fn undo_turn(game: &Game) -> Game {
 #[component]
 pub fn PracticeView() -> Element {
     let mut game = use_signal(Game::new);
+    let mut difficulty = use_signal(|| 5u8);
     let mut revision = use_signal(|| 0u64);
     let mut failure = use_signal(|| None::<String>);
     let mut active = use_signal(|| None::<document::Eval>);
@@ -38,7 +39,8 @@ pub fn PracticeView() -> Element {
             }
             let position = game.peek().clone();
             let requested = *revision.peek();
-            let result = match engine::start(&position) {
+            let skill_level = *difficulty.peek();
+            let result = match engine::start(&position, skill_level) {
                 Ok(eval) => {
                     active.set(Some(eval));
                     let result = engine::finish(eval, &position).await;
@@ -128,6 +130,25 @@ pub fn PracticeView() -> Element {
                     if let Some(error) = failure() {
                         p { id: "engine-error", role: "alert", class: "small", "{error}" }
                         button { id: "retry-stockfish", onclick: move |_| failure.set(None), "Retry Stockfish" }
+                    }
+                    div { class: "body",
+                        label { r#for: "engine-difficulty", "Difficulty" }
+                        select {
+                            id: "engine-difficulty",
+                            value: "{difficulty}",
+                            onchange: move |event| {
+                                if let Ok(level) = event.value().parse::<u8>() {
+                                    difficulty.set(level.min(20));
+                                    revision += 1;
+                                    engine::cancel(active);
+                                    failure.set(None);
+                                }
+                            },
+                            option { value: "0", "Easy" }
+                            option { value: "5", "Medium" }
+                            option { value: "10", "Hard" }
+                            option { value: "20", "Maximum" }
+                        }
                     }
                     p { class: "muted small", "Select a piece, then its destination. Dragging and keyboard controls work too." }
                     div { class: "replay-bar",

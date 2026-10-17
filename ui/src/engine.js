@@ -1,4 +1,4 @@
-const [scriptUrl, wasmUrl, position] = await dioxus.recv();
+const [scriptUrl, wasmUrl, position, skill = 20] = await dioxus.recv();
 const controller = new AbortController();
 const urls = [];
 let worker;
@@ -37,6 +37,7 @@ try {
         worker.onmessage = ({ data }) => {
             if (data === "uciok") {
                 worker.postMessage("setoption name Hash value 16");
+                worker.postMessage(`setoption name Skill Level value ${Math.max(0, Math.min(20, skill))}`);
                 worker.postMessage("isready");
             } else if (data === "readyok") {
                 worker.postMessage(position);

@@ -8,18 +8,25 @@ async function openComputer(page: Page) {
     const engine = {
       created: 0, active: 0, terminated: 0,
       lines: [] as string[], assets: [] as string[], blobs: new Set<string>(),
+      commands: [] as { worker: number; command: string }[],
     };
     (window as any).freechessEngine = engine;
     const NativeWorker = window.Worker;
     window.Worker = class extends NativeWorker {
       private alive = true;
+      private workerId: number;
       constructor(url: string | URL, options?: WorkerOptions) {
         super(url, options);
         engine.created++;
+        this.workerId = engine.created;
         engine.active++;
         this.addEventListener("message", event => {
           if (typeof event.data === "string") engine.lines.push(event.data);
         });
+      }
+      postMessage(message: any, options?: Transferable[] | StructuredSerializeOptions) {
+        if (typeof message === "string") engine.commands.push({ worker: this.workerId, command: message });
+        super.postMessage(message, options as any);
       }
       terminate() {
         if (this.alive) {
@@ -63,6 +70,7 @@ async function observed(frame: FrameLocator) {
       created: state.created as number, active: state.active as number,
       terminated: state.terminated as number, blobs: state.blobs.size as number,
       lines: state.lines as string[], assets: state.assets as string[],
+      commands: state.commands as { worker: number; command: string }[],
     };
   });
 }
@@ -124,7 +132,7 @@ test("real Stockfish replies legally, stays responsive and finds a forced mate",
       const bridge = new Function("dioxus", `return (async () => {${source}\n})();`);
       Promise.resolve(bridge({
         recv: () => first
-          ? (first = false, Promise.resolve([js, wasm, "position fen 7k/6pp/5KQ1/8/8/8/8/8 w - - 0 1"]))
+          ? (first = false, Promise.resolve([js, wasm, "position fen 7k/6pp/5KQ1/8/8/8/8/8 w - - 0 1", 20]))
           : new Promise(() => {}),
         send: (result: { best_move?: string; error?: string }) => {
           clearTimeout(timer);
@@ -136,6 +144,58 @@ test("real Stockfish replies legally, stays responsive and finds a forced mate",
   expect(mate.error).toBeNull();
   expect(mate.best_move).toBe("g6g7");
   await idle(frame);
+});
+
+test("difficulty configures every real search and changing it cancels the previous search", async ({ page }) => {
+  const frame = await openComputer(page);
+  const difficulty = frame.locator("#engine-difficulty");
+  await expect(difficulty).toHaveAccessibleName("Difficulty");
+  await expect(difficulty).toHaveValue("5");
+  const blackPieces = await frame.locator(".board > .sq").evaluateAll(squares => Object.fromEntries(
+    squares.map(square => [square.getAttribute("data-square"), square.getAttribute("data-piece")]),
+  ));
+  for (const skill of [5, 0, 10, 20]) {
+    await difficulty.selectOption(String(skill));
+    const before = await observed(frame);
+    await playMove(frame, "e2", "e4");
+    await expect(frame.locator(".moves .mv")).toHaveCount(2);
+    await idle(frame);
+    const state = await observed(frame);
+    expect(state.created).toBe(before.created + 1);
+    const commands = state.commands.filter(entry => entry.worker === state.created).map(entry => entry.command);
+    const configured = commands.indexOf(`setoption name Skill Level value ${skill}`);
+    expect(configured).toBeGreaterThanOrEqual(0);
+    expect(commands.findIndex(command => command.startsWith("go "))).toBeGreaterThan(configured);
+    const best = state.lines.slice(before.lines.length).find(line => line.startsWith("bestmove "))?.split(/\s+/)[1];
+    expect(best).toMatch(/^[a-h][1-8][a-h][1-8][qrbn]?$/);
+    expect(blackPieces[best!.slice(0, 2)]).toMatch(/^[pnbrqk]$/);
+    await expect(frame.locator(`.board > .sq[data-square="${best!.slice(0, 2)}"]`)).toHaveAttribute("data-piece", "");
+    await expect(frame.locator(`.board > .sq[data-square="${best!.slice(2, 4)}"]`)).toHaveAttribute("data-piece", blackPieces[best!.slice(0, 2)]!);
+    await frame.getByRole("button", { name: "New game", exact: true }).click();
+    await expect(frame.locator(".moves .mv")).toHaveCount(0);
+    await expect(difficulty).toHaveValue(String(skill));
+  }
+
+  const previous = (await observed(frame)).created;
+  await playMove(frame, "e2", "e4");
+  await expect.poll(async () => (await observed(frame)).commands.some(entry =>
+    entry.worker > previous && entry.command.startsWith("go ")),
+  { timeout: 20_000 }).toBe(true);
+  await expect(frame.locator(".moves .mv")).toHaveCount(1);
+  const canceled = (await observed(frame)).created;
+  await difficulty.selectOption("0");
+  await expect.poll(async () => (await observed(frame)).created, { timeout: 20_000 }).toBeGreaterThan(canceled);
+  await expect(frame.locator(".moves .mv")).toHaveCount(2);
+  await idle(frame);
+  const state = await observed(frame);
+  const commands = state.commands.filter(entry => entry.worker === state.created).map(entry => entry.command);
+  expect(commands).toContain("setoption name Skill Level value 0");
+  expect(commands.indexOf("setoption name Skill Level value 0")).toBeLessThan(commands.findIndex(command => command.startsWith("go ")));
+  expect(state.terminated).toBe(state.created);
+  await page.waitForTimeout(1_000);
+  await expect(frame.locator(".moves .mv")).toHaveCount(2);
+  await frame.getByRole("button", { name: "New game", exact: true }).click();
+  await expect(difficulty).toHaveValue("0");
 });
 
 test("undo, restart and leaving during search discard stale results and release workers", async ({ page }) => {
